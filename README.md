@@ -2,6 +2,7 @@
 
 ### Dataset: https://www.kaggle.com/datasets/gpreda/chinese-mnist/data
 ### Work: Compare the performance of CNN and Transformer
+### Overleaf: https://www.overleaf.com/1529323783cgkwxzdjwkmq#12b48f
 
 #### 超参数
 1. **Epoch** = 10 / 20
