@@ -8,7 +8,7 @@
 3. **Batch Size** = 64
 4. **8Train Size : Test Size** = 4 : 1
 
-#3# Dataset: https://www.kaggle.com/datasets/gpreda/chinese-mnist/data
+### Dataset: https://www.kaggle.com/datasets/gpreda/chinese-mnist/data
 ![dataset_sample](Article_Images/dataset_sample.png)
 
 ### Models
