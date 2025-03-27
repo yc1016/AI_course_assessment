@@ -1,14 +1,28 @@
 # AI_course_assessment
+## Work: Compare the performance of CNN and Transformer
+## Overleaf: https://www.overleaf.com/1529323783cgkwxzdjwkmq#12b48f
 
-### Dataset: https://www.kaggle.com/datasets/gpreda/chinese-mnist/data
-### Work: Compare the performance of CNN and Transformer
-### Overleaf: https://www.overleaf.com/1529323783cgkwxzdjwkmq#12b48f
-
-#### 超参数
-1. **Epoch** = 10 / 20
-2. **Learning Rate** = 0.0002
+#### Super Parameters
+1. **Epoch** = 10
+2. **Learning Rate** = 0.0001
 3. **Batch Size** = 64
-4. **8Train Size : Test Size** = 4 : 1 
+4. **8Train Size : Test Size** = 4 : 1
+
+#3# Dataset: https://www.kaggle.com/datasets/gpreda/chinese-mnist/data
+![dataset_sample](Article_Images/dataset_sample.png)
+
+### Models
+<!DOCTYPE html>
+<html lang="zh-CN">
+<body>
+  <div style="display: flex; justify-content: space-around;">
+    <img src="Article_Images/CNN.png" alt="CNN" style="width: 300px; height: auto; margin-right: 100px;">
+    <img src="Article_Images/ViT.png" alt="ViT" style="width: 700px; height: auto;">
+  </div>
+</body>
+</html>
+
+### How to Use
 
 在单轮训练中，发现 CNN 需要设置较高的 **learning rate=0.001**，而 Transformer 需要设置较低的 **learning rate=0.0001**。为了保证对比实验的严谨性，这里设置两者均为 **0.0002**，效果不错.  
 在 5折交叉验证中，会有一折出现未学习到图像特征进行随机猜测的情况，表现为 **loss=2.6-2.7, acc=6%-7%**  
