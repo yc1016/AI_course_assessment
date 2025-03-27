@@ -3,7 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 
-root_path = "results/"
+root_path = "images/"
 # data_path = "CNN_64_training_data.csv"
 # data_path = "CNN_128_training_data.csv"
 # data_path = "CNN_224_training_data.csv"

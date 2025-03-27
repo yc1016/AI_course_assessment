@@ -1,21 +1,89 @@
-import torch
 import os
+import csv
+import time
+import torch
+import psutil
+from torchvision import datasets, transforms
 import torch.nn as nn
+import torchvision.models as models
 import torch.nn.functional as F
-import torch.optim as optim
-from PIL import Image
-from torchvision import transforms
-from torch.utils.data import Dataset, DataLoader, Subset
+from torch.utils.data import Dataset, Subset
+from transformers import ViTForImageClassification, ViTConfig
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-from collections import Counter
-from sklearn.model_selection import KFold
+from PIL import Image
+from thop import profile
+
+import numpy as np
 from sklearn.model_selection import StratifiedKFold
 
-# 设备选择
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+torch.manual_seed(42)
+np.random.seed(42)
 
-# 数据集定义
+image_sizes = [64, 128, 224]
+model_names = ['CNN', 'ViT']
+epochs = 10
+best_lr = 0.0001
+best_bs = 64
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+criterion = torch.nn.CrossEntropyLoss()
+
+
+class CNN(nn.Module):
+    def __init__(self):
+        super(CNN, self).__init__()
+        self.conv_block1 = nn.Sequential(
+            nn.Conv2d(3, 64, kernel_size=5, padding=2),
+            nn.ReLU(),
+            nn.Conv2d(64, 128, kernel_size=5, padding=2),
+            nn.ReLU()
+        )
+        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
+
+        self.conv_block2 = nn.Sequential(
+            nn.Conv2d(128, 256, kernel_size=5, padding=2),
+            nn.ReLU(),
+            nn.Conv2d(256, 512, kernel_size=5, padding=2),
+            nn.ReLU()
+        )
+        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
+
+        self.avg_pool = nn.AdaptiveAvgPool2d((1, 1))
+
+        self.fc1 = nn.Linear(512, 256)
+        self.relu = nn.ReLU()
+        self.fc2 = nn.Linear(256, 15)
+
+    def forward(self, x):
+        x = self.conv_block1(x)
+        x = self.pool1(x)
+        x = self.conv_block2(x)
+        x = self.pool2(x)
+        x = self.avg_pool(x)
+        x = x.view(x.size(0), -1)
+        x = self.fc1(x)
+        x = self.relu(x)
+        x = self.fc2(x)
+        return x
+
+
+def get_model(model_name, image_size):
+    if model_name == "ViT":
+        config = ViTConfig(
+            image_size=image_size,
+            patch_size=8,
+            num_channels=3,
+            num_labels=15,
+            hidden_size=256,
+            num_hidden_layers=8,
+            num_attention_heads=8,
+            intermediate_size=512
+        )
+        return ViTForImageClassification(config).to(device)
+    else:
+        return CNN().to(device)
+
+
 class CustomImageDataset(Dataset):
     def __init__(self, root_dir, transform=None):
         self.root_dir = root_dir
@@ -24,8 +92,13 @@ class CustomImageDataset(Dataset):
         self.labels = []
 
         for file in os.listdir(root_dir):
-            if file.endswith(('.png', '.jpg', '.jpeg')):  # 过滤图像文件
-                label = int(file.split('_')[-1].split('.')[0])  # 提取文件名中的标签
+            if file.endswith(('.png', '.jpg', '.jpeg')):
+                mark = int(file.split('_')[1])
+                # if mark > 40: # 较小数据集大小
+                #     continue
+                # if (int(file.split('_')[-1].split('.')[0]) >= 12):
+                #     continue
+                label = int(file.split('_')[-1].split('.')[0])
                 self.image_files.append(file)
                 self.labels.append(label - 1)
 
@@ -42,64 +115,83 @@ class CustomImageDataset(Dataset):
 
         return image, label
 
-# 图像预处理
-transform = transforms.Compose([
-    transforms.Resize((224, 224)),  # 统一尺寸
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-])
 
-# 加载数据集
-dataset = CustomImageDataset(root_dir="data/data", transform=transform)
+def show_distribution(test_dataset, train_dataset):
+    train_class_counts = {}
+    for _, label in train_dataset:
+        if label not in train_class_counts:
+            train_class_counts[label] = 0
+        train_class_counts[label] += 1
 
-# CNN 网络定义
-class CNN(nn.Module):
-    def __init__(self, input_shape=(3, 224, 224), num_classes=15):
-        super(CNN, self).__init__()
-        self.conv1 = nn.Conv2d(input_shape[0], 128, kernel_size=3, padding=1)
-        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.dropout1 = nn.Dropout(0.25)
+    test_class_counts = {}
+    for _, label in test_dataset:
+        if label not in test_class_counts:
+            test_class_counts[label] = 0
+        test_class_counts[label] += 1
 
-        self.conv2 = nn.Conv2d(128, 128, kernel_size=3, padding=1)
-        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.dropout2 = nn.Dropout(0.25)
+    print("Training set class counts:")
+    for class_label, count in sorted(train_class_counts.items()):
+        print(f"Class {class_label}: {count}")
 
-        # 计算展平后的大小
-        with torch.no_grad():
-            dummy_input = torch.zeros(1, *input_shape)
-            dummy_output = self.pool2(self.conv2(self.pool1(self.conv1(dummy_input))))
-            flatten_size = dummy_output.view(1, -1).size(1)
+    print("Test set class counts:")
+    for class_label, count in sorted(test_class_counts.items()):
+        print(f"Class {class_label}: {count}")
 
-        self.fc1 = nn.Linear(flatten_size, 128)
-        self.dropout3 = nn.Dropout(0.5)
-        self.fc2 = nn.Linear(128, num_classes)
+def show_images(images, preds_labels, title, max_images=10, images_per_row=5):
+    rows = (max_images + images_per_row - 1) // images_per_row
+    plt.figure(figsize=(15, rows * 3))
+    for i in range(min(max_images, len(images))):
+        plt.subplot(rows, images_per_row, i + 1)
+        img = images[i].squeeze(0).permute(1, 2, 0).numpy()
+        pred, label, conf = preds_labels[i]
+        plt.imshow(img)
+        plt.title(f"Label: {label}\nPred: {pred} ({conf:.2f})")
+        plt.axis('off')
+    plt.suptitle(title)
+    plt.tight_layout()
+    plt.show()
 
-    def forward(self, x):
-        x = self.pool1(F.relu(self.conv1(x)))
-        x = self.dropout1(x)
-        x = self.pool2(F.relu(self.conv2(x)))
-        x = self.dropout2(x)
-        x = torch.flatten(x, start_dim=1)
-        x = F.relu(self.fc1(x))
-        x = self.dropout3(x)
-        x = self.fc2(x)
-        return x
+def show_flops_params(model_name, image_size):
+    model = get_model(model_name)
+    input_tensor = torch.randn(1, 3, image_size, image_size).to(device)
+    flops, params = profile(model, inputs=(input_tensor,))
+    print(f"FLOPs of {model_name} for {image_size}x{image_size}: {flops}")
+    print(f"Params of {model_name} for {image_size}x{image_size}: {params}")
 
-# 训练和测试函数
-def train_and_evaluate(model, train_loader, val_loader, criterion, optimizer, epochs=10):
-    train_losses, train_accuracies = [], []
-    val_losses, val_accuracies = [], []
+def get_memory_usage():
+    if device.type == "cuda":
+        return torch.cuda.memory_allocated() / (1024 ** 2)  # 转换为MB
+    else:
+        process = psutil.Process(os.getpid())
+        memory_info = process.memory_info()
+        return memory_info.rss / (1024 ** 2)  # 转换为MB
+
+
+def train_model_with_accuracy(fold, model_name, model, train_loader, test_loader, criterion, optimizer, epochs=5):
+    train_losses = []
+    train_accuracies = []
+    test_accuracies = []
+    test_losses = []
+    epoch_times = []
+    epoch_memory_usages = []
 
     for epoch in range(epochs):
-        # 训练
+        start_time = time.time()
         model.train()
         running_loss = 0.0
         correct = 0
         total = 0
-        for images, labels in tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs} - Training"):
+        progress_bar = tqdm(train_loader, desc=f"Epoch {epoch + 1}/{epochs}")
+
+        for images, labels in progress_bar:
             images, labels = images.to(device), labels.to(device)
             optimizer.zero_grad()
-            outputs = model(images)
+
+            if model_name == "ViT":
+                outputs = model(images).logits
+            else:
+                outputs = model(images)
+
             loss = criterion(outputs, labels)
             loss.backward()
             optimizer.step()
@@ -109,118 +201,161 @@ def train_and_evaluate(model, train_loader, val_loader, criterion, optimizer, ep
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
 
+            progress_bar.set_postfix(loss=loss.item())
+
         train_loss = running_loss / len(train_loader)
         train_accuracy = 100 * correct / total
         train_losses.append(train_loss)
         train_accuracies.append(train_accuracy)
 
-        # 评估
-        val_loss, val_accuracy = evaluate(model, val_loader, criterion)
-        val_losses.append(val_loss)
-        val_accuracies.append(val_accuracy)
+        test_loss, test_accuracy = evaluate_model(model_name, model, test_loader, criterion)
+        test_losses.append(test_loss)
+        test_accuracies.append(test_accuracy)
 
-        print(f"Epoch {epoch+1} - Train Loss: {train_loss:.4f}, Train Acc: {train_accuracy:.2f}%, "
-              f"Val Loss: {val_loss:.4f}, Val Acc: {val_accuracy:.2f}%")
+        end_time = time.time()
+        epoch_time = end_time - start_time
+        epoch_times.append(epoch_time)
 
-    return train_losses, train_accuracies, val_losses, val_accuracies
+        memory_usage = get_memory_usage()
+        epoch_memory_usages.append(memory_usage)
 
-def evaluate(model, val_loader, criterion):
+        print(f"Epoch {epoch + 1} - Train Loss: {train_loss:.4f}, Train Acc: {train_accuracy:.2f}%, "
+              f"Test Loss: {test_loss:.4f}, Test Acc: {test_accuracy:.2f}%, Time: {epoch_time:.2f}s, Memory: {memory_usage:.2f}MB")
+
+    # 保存数据到 CSV 文件
+    csv_file = f"{model_name}_{image_size}_Fold{fold}.csv"
+    with open(csv_file, mode='w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(['Epoch', 'Train Loss', 'Train Accuracy', 'Test Loss', 'Test Accuracy', 'Epoch Time', 'Epoch Memory'])
+        for i in range(len(train_losses)):
+            writer.writerow([i + 1, train_losses[i], train_accuracies[i], test_losses[i], test_accuracies[i], epoch_times[i], epoch_memory_usages[i]])
+
+    return test_accuracies[-1]
+
+
+def evaluate_model(model_name, model, test_loader, criterion):
     model.eval()
-    val_loss = 0.0
+    test_loss = 0.0
     correct = 0
     total = 0
 
     with torch.no_grad():
-        for images, labels in val_loader:
+        for images, labels in test_loader:
             images, labels = images.to(device), labels.to(device)
-            outputs = model(images)
+
+            if model_name == "ViT":
+                outputs = model(images).logits
+            else:
+                outputs = model(images)
+
             loss = criterion(outputs, labels)
-            val_loss += loss.item()
+            test_loss += loss.item()
+
             _, predicted = torch.max(outputs, 1)
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
 
-    return val_loss / len(val_loader), 100 * correct / total
+    avg_loss = test_loss / len(test_loader)
+    accuracy = 100 * correct / total
+    return avg_loss, accuracy
 
-# 5折交叉验证
-# def cross_validate(dataset, k=5, epochs=10, batch_size=64):
-#     kf = KFold(n_splits=k, shuffle=True, random_state=42)
-#     fold_results = []
 
-#     for fold, (train_idx, val_idx) in enumerate(kf.split(dataset)):
-#         print(f"\nFold {fold+1}/{k}")
+def test_model_with_confidence(model_name, model, test_loader):
+    model.eval()
+    correct_images = []
+    incorrect_images = []
+    correct_preds = []
+    incorrect_preds = []
 
-#         train_subset = Subset(dataset, train_idx)
-#         val_subset = Subset(dataset, val_idx)
+    with torch.no_grad():
+        for images, labels in test_loader:
+            images, labels = images.to(device), labels.to(device)
 
-#         train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True)
-#         val_loader = DataLoader(val_subset, batch_size=batch_size, shuffle=False)
+            if model_name == "ViT":
+                outputs = model(images).logits
+            else:
+                outputs = model(images)
 
-#         # 初始化模型、损失函数和优化器
-#         model = CNN().to(device)
-#         criterion = nn.CrossEntropyLoss()
-#         optimizer = optim.Adam(model.parameters(), lr=0.0002)
+            probs = torch.softmax(outputs, dim=1)
+            conf, predicted = torch.max(probs, 1)
 
-#         # 训练并评估
-#         train_losses, train_accuracies, val_losses, val_accuracies = train_and_evaluate(
-#             model, train_loader, val_loader, criterion, optimizer, epochs
-#         )
+            for i in range(images.size(0)):
+                if predicted[i] == labels[i]:
+                    correct_images.append(images[i].cpu())
+                    correct_preds.append((predicted[i].item(), labels[i].item(), conf[i].item()))
+                else:
+                    incorrect_images.append(images[i].cpu())
+                    incorrect_preds.append((predicted[i].item(), labels[i].item(), conf[i].item()))
 
-#         fold_results.append({
-#             "train_losses": train_losses,
-#             "train_accuracies": train_accuracies,
-#             "val_losses": val_losses,
-#             "val_accuracies": val_accuracies
-#         })
+    show_images(correct_images, correct_preds, "Correct Predictions (with Confidence)", max_images=5)
+    show_images(incorrect_images, incorrect_preds, "Incorrect Predictions (with Confidence)", max_images=5)
 
-#     # 计算平均结果
-#     avg_train_acc = sum([x["train_accuracies"][-1] for x in fold_results]) / k
-#     avg_val_acc = sum([x["val_accuracies"][-1] for x in fold_results]) / k
-#     print(f"\nAverage Train Accuracy: {avg_train_acc:.2f}%")
-#     print(f"Average Validation Accuracy: {avg_val_acc:.2f}%")
 
-#     return fold_results
-def cross_validate(dataset, k=5, epochs=10, batch_size=64):
-    labels = [label for _, label in dataset]  # 获取所有样本的标签
-    kf = StratifiedKFold(n_splits=k, shuffle=True, random_state=42)
-    fold_results = []
+def grid_search(model_name, learning_rates, batch_sizes, epochs, criterion, image_size):
+    results = {}
+    best_accuracy = 0
+    best_lr = None
+    best_bs = None
 
-    for fold, (train_idx, val_idx) in enumerate(kf.split(dataset, labels)):
-        print(f"\nFold {fold+1}/{k}")
-        
-        # train_labels = [labels[idx] for idx in val_idx]
-        # train_label_counts = Counter(train_labels)
-        # print(f"Training set class distribution: {dict(train_label_counts)}")
+    for lr in learning_rates:
+        for bs in batch_sizes:
+            print(f"========Testing learning rate: {lr}, batch size: {bs}==========")
+            train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=bs, shuffle=True)
+            test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=bs, shuffle=False)
+            model = get_model(model_name, image_size)
+            optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+            accuracy = train_model_with_accuracy(model_name, model, train_loader, test_loader, criterion, optimizer, epochs=epochs)
+            results[(lr, bs)] = accuracy
+            if accuracy > best_accuracy:
+                best_accuracy = accuracy
+                best_lr = lr
+                best_bs = bs
 
-        train_subset = Subset(dataset, train_idx)
-        val_subset = Subset(dataset, val_idx)
+    print(f"All results: {results}")
+    print(f"Best learning rate: {best_lr}, best batch size: {best_bs}, best accuracy: {best_accuracy:.2f}%")
+    return best_lr, best_bs
 
-        train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True)
-        val_loader = DataLoader(val_subset, batch_size=batch_size, shuffle=False)
 
-        # 初始化模型、损失函数和优化器
-        model = CNN().to(device)
-        criterion = nn.CrossEntropyLoss()
-        optimizer = optim.Adam(model.parameters(), lr=0.0002)
+for image_size in image_sizes:
+    for model_name in model_names:
+        print(f"===================== Image size: {image_size} Model: {model_name} =====================")
 
-        # 训练并评估
-        train_losses, train_accuracies, val_losses, val_accuracies = train_and_evaluate(
-            model, train_loader, val_loader, criterion, optimizer, epochs
-        )
+        show_flops_params(model_name, image_size)
 
-        fold_results.append({
-            "train_losses": train_losses,
-            "train_accuracies": train_accuracies,
-            "val_losses": val_losses,
-            "val_accuracies": val_accuracies
-        })
+        transform = transforms.Compose([
+            transforms.Resize((image_size, image_size)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            # transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+        ])
 
-    avg_train_acc = sum([x["train_accuracies"][-1] for x in fold_results]) / k
-    avg_val_acc = sum([x["val_accuracies"][-1] for x in fold_results]) / k
-    print(f"\nAverage Train Accuracy: {avg_train_acc:.2f}%")
-    print(f"Average Validation Accuracy: {avg_val_acc:.2f}%")
+        dataset = CustomImageDataset(root_dir="data/data", transform=transform)
 
-    return fold_results
+        k = 5  # 5 折交叉验证
+        skf = StratifiedKFold(n_splits=k, shuffle=True, random_state=42)
+        all_accuracies = []
+        labels = [label for _, label in dataset]
 
-# 运行5折交叉验证
-cross_validate(dataset, k=5, epochs=10, batch_size=64)
+        for fold, (train_indices, val_indices) in enumerate(skf.split(np.zeros(len(labels)), labels)):
+            print(f"Fold {fold + 1}/{k}")
+            train_dataset = Subset(dataset, train_indices)
+            test_dataset = Subset(dataset, val_indices)
+
+            print(f"Training dataset size: {len(train_dataset)}")
+            print(f"Test dataset size: {len(test_dataset)}")
+
+            show_distribution(test_dataset, train_dataset)
+
+            # learning_rates = [0.0001]
+            # batch_sizes = [64]
+            # best_lr, best_bs = grid_search(model_name, learning_rates, batch_sizes, epochs, criterion, image_size)
+
+            train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=best_bs, shuffle=True)
+            test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=best_bs, shuffle=False)
+            model = get_model(model_name, image_size)
+            optimizer = torch.optim.Adam(model.parameters(), lr=best_lr)
+
+            accuracy = train_model_with_accuracy(fold, model_name, model, train_loader, test_loader, criterion, optimizer, epochs=epochs)
+            all_accuracies.append(accuracy)
+
+        print(f"Average accuracy for image size {image_size}: {np.mean(all_accuracies):.2f}%")

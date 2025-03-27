@@ -20,37 +20,41 @@ criterion = torch.nn.CrossEntropyLoss()
 
 
 class CNN(nn.Module):
-    def __init__(self, input_shape=(3, 224, 224), num_classes=15):
+    def __init__(self):
         super(CNN, self).__init__()
-        self.conv1 = nn.Conv2d(input_shape[0], 128, kernel_size=3, padding=1)
+        self.conv_block1 = nn.Sequential(
+            nn.Conv2d(3, 64, kernel_size=5, padding=2),
+            nn.ReLU(),
+            nn.Conv2d(64, 128, kernel_size=5, padding=2),
+            nn.ReLU()
+        )
         self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
-        # self.dropout1 = nn.Dropout(0.25)
 
-        self.conv2 = nn.Conv2d(128, 128, kernel_size=3, padding=1)
+        self.conv_block2 = nn.Sequential(
+            nn.Conv2d(128, 256, kernel_size=5, padding=2),
+            nn.ReLU(),
+            nn.Conv2d(256, 512, kernel_size=5, padding=2),
+            nn.ReLU()
+        )
         self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
-        # self.dropout2 = nn.Dropout(0.25)
 
-        # 计算展平后的大小
-        with torch.no_grad():
-            dummy_input = torch.zeros(1, *input_shape)
-            dummy_output = self.pool2(self.conv2(self.pool1(self.conv1(dummy_input))))
-            flatten_size = dummy_output.view(1, -1).size(1)
+        self.avg_pool = nn.AdaptiveAvgPool2d((1, 1))
 
-        self.fc1 = nn.Linear(flatten_size, 128)
-        # self.dropout3 = nn.Dropout(0.5)
-        self.fc2 = nn.Linear(128, num_classes)
+        self.fc1 = nn.Linear(512, 256)
+        self.relu = nn.ReLU()
+        self.fc2 = nn.Linear(256, 15)
 
     def forward(self, x):
-        x = self.pool1(F.relu(self.conv1(x)))
-        # x = self.dropout1(x)
-        x = self.pool2(F.relu(self.conv2(x)))
-        # x = self.dropout2(x)
-        x = torch.flatten(x, start_dim=1)
-        x = F.relu(self.fc1(x))
-        # x = self.dropout3(x)
+        x = self.conv_block1(x)
+        x = self.pool1(x)
+        x = self.conv_block2(x)
+        x = self.pool2(x)
+        x = self.avg_pool(x)
+        x = x.view(x.size(0), -1)
+        x = self.fc1(x)
+        x = self.relu(x)
         x = self.fc2(x)
         return x
-
 
 def get_model(model_name):
     if model_name == "ViT":
@@ -60,13 +64,13 @@ def get_model(model_name):
             num_channels=3,
             num_labels=15,
             hidden_size=256,
-            num_hidden_layers=10,
+            num_hidden_layers=8,
             num_attention_heads=8,
             intermediate_size=512
         )
         return ViTForImageClassification(config).to(device)
     else:
-        return CNN((3, image_size, image_size)).to(device)
+        return CNN().to(device)
 
 
 class CustomImageDataset(Dataset):
@@ -138,7 +142,7 @@ def show_images(images, preds_labels, title, max_images=10, images_per_row=5):
     plt.show()
 
 
-def train_vit_with_accuracy(model_name, model, train_loader, test_loader, criterion, optimizer, epochs=5):
+def train_model_with_accuracy(model_name, model, train_loader, test_loader, criterion, optimizer, epochs=5):
     train_losses = []
     train_accuracies = []
     test_accuracies = []
@@ -178,7 +182,7 @@ def train_vit_with_accuracy(model_name, model, train_loader, test_loader, criter
         train_losses.append(train_loss)
         train_accuracies.append(train_accuracy)
 
-        test_loss, test_accuracy = evaluate_accuracy(model_name, model, test_loader, criterion)
+        test_loss, test_accuracy = evaluate_model(model_name, model, test_loader, criterion)
         test_losses.append(test_loss)
         test_accuracies.append(test_accuracy)
 
@@ -191,17 +195,17 @@ def train_vit_with_accuracy(model_name, model, train_loader, test_loader, criter
         # if epoch > 2 and test_accuracy < 40:
         #     break
 
-    csv_file = f"{model_name}_{image_size}_training_data.csv"
-    with open(csv_file, mode='w', newline='') as file:
-        writer = csv.writer(file)
-        writer.writerow(['Epoch', 'Train Loss', 'Train Accuracy', 'Test Loss', 'Test Accuracy', 'Epoch Time'])
-        for i in range(len(train_losses)):
-            writer.writerow([i + 1, train_losses[i], train_accuracies[i], test_losses[i], test_accuracies[i], epoch_times[i]])
+    # csv_file = f"{model_name}_{image_size}_training_data.csv"
+    # with open(csv_file, mode='w', newline='') as file:
+    #     writer = csv.writer(file)
+    #     writer.writerow(['Epoch', 'Train Loss', 'Train Accuracy', 'Test Loss', 'Test Accuracy', 'Epoch Time'])
+    #     for i in range(len(train_losses)):
+    #         writer.writerow([i + 1, train_losses[i], train_accuracies[i], test_losses[i], test_accuracies[i], epoch_times[i]])
 
     return test_accuracies[-1]
 
 
-def evaluate_accuracy(model_name, model, test_loader, criterion):
+def evaluate_model(model_name, model, test_loader, criterion):
     model.eval()
     test_loss = 0.0
     correct = 0
@@ -228,7 +232,7 @@ def evaluate_accuracy(model_name, model, test_loader, criterion):
     return avg_loss, accuracy
 
 
-def test_vit_with_confidence(model_name, model, test_loader):
+def test_model_with_confidence(model_name, model, test_loader):
     model.eval()
     correct_images = []
     incorrect_images = []
@@ -267,12 +271,12 @@ def grid_search(model_name, learning_rates, batch_sizes, epochs, criterion):
 
     for lr in learning_rates:
         for bs in batch_sizes:
-            print(f"========Testing learning rate: {lr}, batch size: {bs}==========")
+            print(f"======== Testing learning rate: {lr}, batch size: {bs} ==========")
             train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=bs, shuffle=True)
             test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=bs, shuffle=False)
             model = get_model(model_name)
             optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-            accuracy = train_vit_with_accuracy(model_name, model, train_loader, test_loader, criterion, optimizer, epochs=epochs)
+            accuracy = train_model_with_accuracy(model_name, model, train_loader, test_loader, criterion, optimizer, epochs=epochs)
             results[(lr, bs)] = accuracy
             if accuracy > best_accuracy:
                 best_accuracy = accuracy
@@ -310,8 +314,8 @@ show_distribution(test_dataset, train_dataset)
 '''CNN-64x64: lr = 0.0001 bs = 64'''
 '''CNN-128x128: lr = 0.0001 bs = 64'''
 '''CNN-224x224: lr = 0.0001 bs = 64'''
-learning_rates = [0.0001]
-batch_sizes = [64]
+learning_rates = [0.0005, 0.0002, 0.0001]
+batch_sizes = [32, 64, 128]
 
 best_lr, best_bs = grid_search(model_name, learning_rates, batch_sizes, epochs, criterion)
 
