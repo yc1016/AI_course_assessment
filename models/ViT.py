@@ -2,14 +2,15 @@ import torch
 from transformers import ViTForImageClassification, ViTConfig
 from thop import profile
 
-class ViT:
+class ViT(torch.nn.Module):
     def __init__(self, image_size):
+        super(ViT, self).__init__()
         self.image_size = image_size
         self.config = self._create_config()
         self.model = self._create_model()
 
     def _create_config(self):
-        config = ViTConfig(
+        return ViTConfig(
             image_size=self.image_size,
             patch_size=8,
             num_channels=3,
@@ -19,20 +20,18 @@ class ViT:
             num_attention_heads=8,
             intermediate_size=512
         )
-        return config
 
     def _create_model(self):
-        model = ViTForImageClassification(self.config)
-        return model
+        return ViTForImageClassification(self.config)
     
-    def get_model(self):
-        return self.model    
+    def forward(self, x):
+        return self.model(x)
     
 
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     image_size = 224
-    model_name = "CNN"
+    model_name = "ViT"
 
     model = ViT(image_size).to(device)
     input_tensor = torch.randn(1, 3, image_size, image_size).to(device)

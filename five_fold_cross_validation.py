@@ -13,14 +13,18 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 from PIL import Image
 from thop import profile
+from models.CNN import CNN
+from models.ViT import ViT
 
 import numpy as np
 from sklearn.model_selection import StratifiedKFold
 
+# 设置随机数种子
 torch.manual_seed(42)
 np.random.seed(42)
 
-image_sizes = [64, 128, 224]
+image_sizes = [64, 128, 224]  # 考虑的三个图像大小
+# model_name = "CNN_test"
 model_names = ['CNN', 'ViT']
 epochs = 10
 best_lr = 0.0001
@@ -29,57 +33,10 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 criterion = torch.nn.CrossEntropyLoss()
 
 
-class CNN(nn.Module):
-    def __init__(self):
-        super(CNN, self).__init__()
-        self.conv_block1 = nn.Sequential(
-            nn.Conv2d(3, 64, kernel_size=5, padding=2),
-            nn.ReLU(),
-            nn.Conv2d(64, 128, kernel_size=5, padding=2),
-            nn.ReLU()
-        )
-        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
-
-        self.conv_block2 = nn.Sequential(
-            nn.Conv2d(128, 256, kernel_size=5, padding=2),
-            nn.ReLU(),
-            nn.Conv2d(256, 512, kernel_size=5, padding=2),
-            nn.ReLU()
-        )
-        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
-
-        self.avg_pool = nn.AdaptiveAvgPool2d((1, 1))
-
-        self.fc1 = nn.Linear(512, 256)
-        self.relu = nn.ReLU()
-        self.fc2 = nn.Linear(256, 15)
-
-    def forward(self, x):
-        x = self.conv_block1(x)
-        x = self.pool1(x)
-        x = self.conv_block2(x)
-        x = self.pool2(x)
-        x = self.avg_pool(x)
-        x = x.view(x.size(0), -1)
-        x = self.fc1(x)
-        x = self.relu(x)
-        x = self.fc2(x)
-        return x
-
 
 def get_model(model_name, image_size):
     if model_name == "ViT":
-        config = ViTConfig(
-            image_size=image_size,
-            patch_size=8,
-            num_channels=3,
-            num_labels=15,
-            hidden_size=256,
-            num_hidden_layers=8,
-            num_attention_heads=8,
-            intermediate_size=512
-        )
-        return ViTForImageClassification(config).to(device)
+        return ViT(image_size).to(device)
     else:
         return CNN().to(device)
 
@@ -94,10 +51,6 @@ class CustomImageDataset(Dataset):
         for file in os.listdir(root_dir):
             if file.endswith(('.png', '.jpg', '.jpeg')):
                 mark = int(file.split('_')[1])
-                # if mark > 40: # 较小数据集大小
-                #     continue
-                # if (int(file.split('_')[-1].split('.')[0]) >= 12):
-                #     continue
                 label = int(file.split('_')[-1].split('.')[0])
                 self.image_files.append(file)
                 self.labels.append(label - 1)
@@ -152,7 +105,7 @@ def show_images(images, preds_labels, title, max_images=10, images_per_row=5):
     plt.show()
 
 def show_flops_params(model_name, image_size):
-    model = get_model(model_name)
+    model = get_model(model_name, image_size)
     input_tensor = torch.randn(1, 3, image_size, image_size).to(device)
     flops, params = profile(model, inputs=(input_tensor,))
     print(f"FLOPs of {model_name} for {image_size}x{image_size}: {flops}")
@@ -165,6 +118,13 @@ def get_memory_usage():
         process = psutil.Process(os.getpid())
         memory_info = process.memory_info()
         return memory_info.rss / (1024 ** 2)  # 转换为MB
+
+def save_model(model, model_name, image_size, fold):
+    model_dir = "weights"
+    os.makedirs(model_dir, exist_ok=True)
+    model_path = os.path.join(model_dir, f"{model_name}_{image_size}_Fold{fold+1}.pth")
+    torch.save(model.state_dict(), model_path)
+    print(f"Model saved to {model_path}")
 
 
 def train_model_with_accuracy(fold, model_name, model, train_loader, test_loader, criterion, optimizer, epochs=5):
@@ -221,9 +181,11 @@ def train_model_with_accuracy(fold, model_name, model, train_loader, test_loader
 
         print(f"Epoch {epoch + 1} - Train Loss: {train_loss:.4f}, Train Acc: {train_accuracy:.2f}%, "
               f"Test Loss: {test_loss:.4f}, Test Acc: {test_accuracy:.2f}%, Time: {epoch_time:.2f}s, Memory: {memory_usage:.2f}MB")
+    # 保存模型参数
+    save_model(model, model_name, image_size, fold)
 
     # 保存数据到 CSV 文件
-    csv_file = f"{model_name}_{image_size}_Fold{fold}.csv"
+    csv_file = f"{model_name}_{image_size}_Fold{fold+1}.csv"
     with open(csv_file, mode='w', newline='') as file:
         writer = csv.writer(file)
         writer.writerow(['Epoch', 'Train Loss', 'Train Accuracy', 'Test Loss', 'Test Accuracy', 'Epoch Time', 'Epoch Memory'])
@@ -289,31 +251,6 @@ def test_model_with_confidence(model_name, model, test_loader):
 
     show_images(correct_images, correct_preds, "Correct Predictions (with Confidence)", max_images=5)
     show_images(incorrect_images, incorrect_preds, "Incorrect Predictions (with Confidence)", max_images=5)
-
-
-def grid_search(model_name, learning_rates, batch_sizes, epochs, criterion, image_size):
-    results = {}
-    best_accuracy = 0
-    best_lr = None
-    best_bs = None
-
-    for lr in learning_rates:
-        for bs in batch_sizes:
-            print(f"========Testing learning rate: {lr}, batch size: {bs}==========")
-            train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=bs, shuffle=True)
-            test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=bs, shuffle=False)
-            model = get_model(model_name, image_size)
-            optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-            accuracy = train_model_with_accuracy(model_name, model, train_loader, test_loader, criterion, optimizer, epochs=epochs)
-            results[(lr, bs)] = accuracy
-            if accuracy > best_accuracy:
-                best_accuracy = accuracy
-                best_lr = lr
-                best_bs = bs
-
-    print(f"All results: {results}")
-    print(f"Best learning rate: {best_lr}, best batch size: {best_bs}, best accuracy: {best_accuracy:.2f}%")
-    return best_lr, best_bs
 
 
 for image_size in image_sizes:
