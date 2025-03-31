@@ -23,18 +23,23 @@
 1. **Epoch** = 10
 2. **Learning Rate** = 0.0001
 3. **Batch Size** = 64
-4. **8Train Size : Test Size** = 4 : 1
+4. **Train Size : Test Size** = 4 : 1
 ```python
-python five_fold_cross_validation.py
+python five_fold_cross_validation.py # train CNN and ViT
 ```
 
 
-
-
 ## Results
-在单轮训练中，发现 CNN 需要设置较高的 **learning rate=0.001**，而 Transformer 需要设置较低的 **learning rate=0.0001**。为了保证对比实验的严谨性，这里设置两者均为 **0.0002**，效果不错.  
-在 5折交叉验证中，会有一折出现未学习到图像特征进行随机猜测的情况，表现为 **loss=2.6-2.7, acc=6%-7%**  
-
+### Params and FLOPs
+|Model|Image Size|Parameters(M)|FLOPs(G)|
+|-----|----------|-------------|--------|
+||64x64||5.05|
+|CNN|128x128|4.44|20.21|
+||224x224||61.90|
+||64x64||0.075|
+|ViT|128x128|4.24|0.286|
+||224x224||0.868|
+### Acc and Loss (待更新)
 #### CNN (learning rate = 0.001)
 | Fold | 平均Train Loss | 平均Train Acc | 平均Val Loss | 平均Val Acc |
 |------|----------------|----------------|--------------|--------------|
@@ -51,7 +56,20 @@ python five_fold_cross_validation.py
 | 3    | 1.15462        | 57.891%        | 1.01899      | 66.259%      |
 | 4    | 1.26613        | 55.162%        | 1.08521      | 64.820%      |
 | 5    | 1.28067        | 55.704%        | 1.03204      | 63.926%      |
+### Training Time and Memory
+|Model|Image Size|Training Time(s)|Memory(MB)|
+|-----|----------|-------------|--------|
+||64x64|184.24|86.16|
+|CNN|128x128|463.61|91.66|
+||224x224|1024.51|83.18|
+||64x64|124.49|83.18|
+|ViT|128x128|219.52|88.43|
+||224x224|897.36|102.87|
+### Confusion Matrix
+#### CNN
+![CNN_confusion](results/CNN_confusion_matrix.png)  
+如图所示
+#### ViT
+![ViT_confusion](results/ViT_confusion_matrix.png)
+如图所示
 
-简单来看，CNN在平均指标上更胜一筹，尽管两者在每折的最终轮次的表现相近  
-研究不同的 image size，模型的参数量变化，观察模型表现；  
-研究不同的 epoch，观察模型表现，训练时间
