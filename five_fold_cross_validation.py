@@ -23,6 +23,7 @@ np.random.seed(42)
 
 image_sizes = [64, 128, 224]  # the three image sizes for experiment
 model_names = ['CNN', 'ViT']
+labels_folder = "labels_data/"
 target_classes = {"CNN": [9, 12], "ViT": [3, 12]} # the classes observed in each model
 
 epochs = 10
@@ -128,11 +129,11 @@ def show_flops_params(model_name, image_size):
 '''
 def get_memory_usage():
     if device.type == "cuda":
-        return torch.cuda.memory_allocated() / (1024 ** 2)  # 转换为MB
+        return torch.cuda.memory_allocated() / (1024 ** 2)  # change to (MB)
     else:
         process = psutil.Process(os.getpid())
         memory_info = process.memory_info()
-        return memory_info.rss / (1024 ** 2)  # 转换为MB
+        return memory_info.rss / (1024 ** 2)  # change to (MB)
 
 
 '''save_model():
@@ -165,7 +166,7 @@ def train_model(fold, model_name, model, train_loader, test_loader, criterion, o
         running_loss = 0.0
         correct = 0
         total = 0
-        progress_bar = tqdm(train_loader, desc=f"Epoch {epoch + 1}/{epochs}")
+        progress_bar = tqdm(train_loader, desc=f"Epoch {epoch + 1}/{epochs}") # using tqdm() to show progress
 
         for images, labels in progress_bar:
             images, labels = images.to(device), labels.to(device)
@@ -196,10 +197,12 @@ def train_model(fold, model_name, model, train_loader, test_loader, criterion, o
         test_losses.append(test_loss)
         test_accuracies.append(test_accuracy)
 
+        # calculate the time spent in this epoch
         end_time = time.time()
         epoch_time = end_time - start_time
         epoch_times.append(epoch_time)
 
+        # get the memory usage during training
         memory_usage = get_memory_usage()
         epoch_memory_usages.append(memory_usage)
 
@@ -232,6 +235,7 @@ def evaluate_model(model_name, model, test_loader, criterion, fold, epoch):
     total = 0
     true_labels = []
     pred_labels = []
+    save_path = f"{labels_folder}{model_name}/"
 
     with torch.no_grad():
         for images, labels in test_loader:
@@ -249,19 +253,18 @@ def evaluate_model(model_name, model, test_loader, criterion, fold, epoch):
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
 
+            # record the true_labels and pred_labels to calculate metrics
             true_labels.extend(labels.cpu().numpy())
             pred_labels.extend(predicted.cpu().numpy())
 
+    # just save the last epoch
     if epoch == 10:
-        np.save(f"{model_name}_{image_size}_Fold{fold+1}_true_labels.npy", np.array(true_labels))
-        np.save(f"{model_name}_{image_size}_Fold{fold+1}_pred_labels.npy", np.array(pred_labels))   
+        np.save(save_path+f"{model_name}_{image_size}_Fold{fold+1}_true_labels.npy", np.array(true_labels))
+        np.save(save_path+f"{model_name}_{image_size}_Fold{fold+1}_pred_labels.npy", np.array(pred_labels))   
         
         target_labels = target_classes[model_name]
         report = classification_report(true_labels, pred_labels, labels=target_labels)
         print(f"Classification Report for {model_name} {image_size} Fold{fold + 1}:\n{report}")
-        report_file = f"{model_name}_{image_size}_Fold{fold + 1}_classification_report.txt"
-        with open(report_file, 'w') as f:
-            f.write(report)
 
     avg_loss = test_loss / len(test_loader)
     accuracy = 100 * correct / total
