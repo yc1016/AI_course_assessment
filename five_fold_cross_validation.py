@@ -257,7 +257,7 @@ def evaluate_model(model_name, model, test_loader, criterion, fold, epoch):
         np.save(f"{model_name}_{image_size}_Fold{fold+1}_pred_labels.npy", np.array(pred_labels))   
         
         target_labels = target_classes[model_name]
-        report = classification_report(true_labels, pred_labels, label=target_labels)
+        report = classification_report(true_labels, pred_labels, labels=target_labels)
         print(f"Classification Report for {model_name} {image_size} Fold{fold + 1}:\n{report}")
         report_file = f"{model_name}_{image_size}_Fold{fold + 1}_classification_report.txt"
         with open(report_file, 'w') as f:
