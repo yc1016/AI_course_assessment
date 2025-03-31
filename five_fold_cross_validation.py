@@ -4,11 +4,9 @@ import time
 import torch
 import psutil
 from torchvision import datasets, transforms
-import torch.nn as nn
-import torchvision.models as models
 import torch.nn.functional as F
 from torch.utils.data import Dataset, Subset
-from transformers import ViTForImageClassification, ViTConfig
+from sklearn.metrics import classification_report
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 from PIL import Image
@@ -19,26 +17,19 @@ from models.ViT import ViT
 import numpy as np
 from sklearn.model_selection import StratifiedKFold
 
-# 设置随机数种子
+# Set random seed for reproducibility
 torch.manual_seed(42)
 np.random.seed(42)
 
-image_sizes = [64, 128, 224]  # 考虑的三个图像大小
-# model_name = "CNN_test"
+image_sizes = [64, 128, 224]  # the three image sizes for experiment
 model_names = ['CNN', 'ViT']
+target_classes = {"CNN": [9, 12], "ViT": [3, 12]} # the classes observed in each model
+
 epochs = 10
 best_lr = 0.0001
 best_bs = 64
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 criterion = torch.nn.CrossEntropyLoss()
-
-
-
-def get_model(model_name, image_size):
-    if model_name == "ViT":
-        return ViT(image_size).to(device)
-    else:
-        return CNN().to(device)
 
 
 class CustomImageDataset(Dataset):
@@ -68,7 +59,19 @@ class CustomImageDataset(Dataset):
 
         return image, label
 
+'''get_model():
+   Get CNN or ViT model from models folder
+'''
+def get_model(model_name, image_size):
+    if model_name == "ViT":
+        return ViT(image_size).to(device)
+    else:
+        return CNN().to(device)
 
+
+'''show_distribution():
+   Print the distribution of classes in training set and test set
+'''
 def show_distribution(test_dataset, train_dataset):
     train_class_counts = {}
     for _, label in train_dataset:
@@ -90,6 +93,10 @@ def show_distribution(test_dataset, train_dataset):
     for class_label, count in sorted(test_class_counts.items()):
         print(f"Class {class_label}: {count}")
 
+
+'''show_images():
+   Test some images in test set with confidence
+'''
 def show_images(images, preds_labels, title, max_images=10, images_per_row=5):
     rows = (max_images + images_per_row - 1) // images_per_row
     plt.figure(figsize=(15, rows * 3))
@@ -104,6 +111,10 @@ def show_images(images, preds_labels, title, max_images=10, images_per_row=5):
     plt.tight_layout()
     plt.show()
 
+
+'''show_flops_params():
+   Calculate the FLOPs and Params of the model by using profile() function
+'''
 def show_flops_params(model_name, image_size):
     model = get_model(model_name, image_size)
     input_tensor = torch.randn(1, 3, image_size, image_size).to(device)
@@ -111,6 +122,10 @@ def show_flops_params(model_name, image_size):
     print(f"FLOPs of {model_name} for {image_size}x{image_size}: {flops}")
     print(f"Params of {model_name} for {image_size}x{image_size}: {params}")
 
+
+'''get_memory_usage():
+   Calculate the memory usage
+'''
 def get_memory_usage():
     if device.type == "cuda":
         return torch.cuda.memory_allocated() / (1024 ** 2)  # 转换为MB
@@ -119,6 +134,10 @@ def get_memory_usage():
         memory_info = process.memory_info()
         return memory_info.rss / (1024 ** 2)  # 转换为MB
 
+
+'''save_model():
+   Save the weights of the trained model to weights folder
+'''
 def save_model(model, model_name, image_size, fold):
     model_dir = "weights"
     os.makedirs(model_dir, exist_ok=True)
@@ -127,7 +146,12 @@ def save_model(model, model_name, image_size, fold):
     print(f"Model saved to {model_path}")
 
 
-def train_model_with_accuracy(fold, model_name, model, train_loader, test_loader, criterion, optimizer, epochs=5):
+'''train_model():
+   Train the model and print some metrics
+     (train_loss, train_acc, test_loss, test_acc, time, memory)
+   during training process
+'''
+def train_model(fold, model_name, model, train_loader, test_loader, criterion, optimizer, epochs=10):
     train_losses = []
     train_accuracies = []
     test_accuracies = []
@@ -168,7 +192,7 @@ def train_model_with_accuracy(fold, model_name, model, train_loader, test_loader
         train_losses.append(train_loss)
         train_accuracies.append(train_accuracy)
 
-        test_loss, test_accuracy = evaluate_model(model_name, model, test_loader, criterion)
+        test_loss, test_accuracy = evaluate_model(model_name, model, test_loader, criterion, fold, epoch+1)
         test_losses.append(test_loss)
         test_accuracies.append(test_accuracy)
 
@@ -181,10 +205,11 @@ def train_model_with_accuracy(fold, model_name, model, train_loader, test_loader
 
         print(f"Epoch {epoch + 1} - Train Loss: {train_loss:.4f}, Train Acc: {train_accuracy:.2f}%, "
               f"Test Loss: {test_loss:.4f}, Test Acc: {test_accuracy:.2f}%, Time: {epoch_time:.2f}s, Memory: {memory_usage:.2f}MB")
-    # 保存模型参数
+    
+    # Save the model in each fold validation
     save_model(model, model_name, image_size, fold)
 
-    # 保存数据到 CSV 文件
+    # Save the metrics data to .csv file
     csv_file = f"{model_name}_{image_size}_Fold{fold+1}.csv"
     with open(csv_file, mode='w', newline='') as file:
         writer = csv.writer(file)
@@ -195,11 +220,18 @@ def train_model_with_accuracy(fold, model_name, model, train_loader, test_loader
     return test_accuracies[-1]
 
 
-def evaluate_model(model_name, model, test_loader, criterion):
+'''evaluate_model():
+   Evaluate the model by test_acc and test_loss
+   Save the true_labels and pred_labels to create confusion matrix
+   Give a report for appointed classes by using classfication_report() function
+'''
+def evaluate_model(model_name, model, test_loader, criterion, fold, epoch):
     model.eval()
     test_loss = 0.0
     correct = 0
     total = 0
+    true_labels = []
+    pred_labels = []
 
     with torch.no_grad():
         for images, labels in test_loader:
@@ -217,9 +249,24 @@ def evaluate_model(model_name, model, test_loader, criterion):
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
 
+            true_labels.extend(labels.cpu().numpy())
+            pred_labels.extend(predicted.cpu().numpy())
+
+    if epoch == 10:
+        np.save(f"{model_name}_{image_size}_Fold{fold+1}_true_labels.npy", np.array(true_labels))
+        np.save(f"{model_name}_{image_size}_Fold{fold+1}_pred_labels.npy", np.array(pred_labels))   
+        
+        target_labels = target_classes[model_name]
+        report = classification_report(true_labels, pred_labels, label=target_labels)
+        print(f"Classification Report for {model_name} {image_size} Fold{fold + 1}:\n{report}")
+        report_file = f"{model_name}_{image_size}_Fold{fold + 1}_classification_report.txt"
+        with open(report_file, 'w') as f:
+            f.write(report)
+
     avg_loss = test_loss / len(test_loader)
     accuracy = 100 * correct / total
     return avg_loss, accuracy
+
 
 
 def test_model_with_confidence(model_name, model, test_loader):
@@ -253,12 +300,14 @@ def test_model_with_confidence(model_name, model, test_loader):
     show_images(incorrect_images, incorrect_preds, "Incorrect Predictions (with Confidence)", max_images=5)
 
 
+
 for image_size in image_sizes:
     for model_name in model_names:
         print(f"===================== Image size: {image_size} Model: {model_name} =====================")
 
         show_flops_params(model_name, image_size)
 
+        # do some pre-processing
         transform = transforms.Compose([
             transforms.Resize((image_size, image_size)),
             transforms.ToTensor(),
@@ -268,11 +317,13 @@ for image_size in image_sizes:
 
         dataset = CustomImageDataset(root_dir="data/data", transform=transform)
 
-        k = 5  # 5 折交叉验证
-        skf = StratifiedKFold(n_splits=k, shuffle=True, random_state=42)
+        k = 5 
+        skf = StratifiedKFold(n_splits=k, shuffle=True, random_state=42) # using StratifiedKFold() to keep the distribution of each class
         all_accuracies = []
         labels = [label for _, label in dataset]
 
+
+        # start the five fold cross validation
         for fold, (train_indices, val_indices) in enumerate(skf.split(np.zeros(len(labels)), labels)):
             print(f"Fold {fold + 1}/{k}")
             train_dataset = Subset(dataset, train_indices)
@@ -292,7 +343,7 @@ for image_size in image_sizes:
             model = get_model(model_name, image_size)
             optimizer = torch.optim.Adam(model.parameters(), lr=best_lr)
 
-            accuracy = train_model_with_accuracy(fold, model_name, model, train_loader, test_loader, criterion, optimizer, epochs=epochs)
+            accuracy = train_model(fold, model_name, model, train_loader, test_loader, criterion, optimizer, epochs=epochs)
             all_accuracies.append(accuracy)
 
         print(f"Average accuracy for image size {image_size}: {np.mean(all_accuracies):.2f}%")
