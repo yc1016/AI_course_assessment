@@ -24,6 +24,7 @@ np.random.seed(42)
 image_sizes = [64, 128, 224]  # the three image sizes for experiment
 model_names = ['CNN', 'ViT']
 labels_folder = "labels_data/"
+training_data_folder = "training_data/"
 target_classes = {"CNN": [9, 12], "ViT": [3, 12]} # the classes observed in each model
 
 epochs = 10
@@ -159,6 +160,7 @@ def train_model(fold, model_name, model, train_loader, test_loader, criterion, o
     test_losses = []
     epoch_times = []
     epoch_memory_usages = []
+    save_folder = f"{training_data_folder}{model_name}/"
 
     for epoch in range(epochs):
         start_time = time.time()
@@ -213,7 +215,8 @@ def train_model(fold, model_name, model, train_loader, test_loader, criterion, o
     save_model(model, model_name, image_size, fold)
 
     # Save the metrics data to .csv file
-    csv_file = f"{model_name}_{image_size}_Fold{fold+1}.csv"
+    os.makedirs(save_folder, exist_ok=True) 
+    csv_file = save_folder + f"{model_name}_{image_size}_Fold{fold+1}.csv"
     with open(csv_file, mode='w', newline='') as file:
         writer = csv.writer(file)
         writer.writerow(['Epoch', 'Train Loss', 'Train Accuracy', 'Test Loss', 'Test Accuracy', 'Epoch Time', 'Epoch Memory'])
@@ -235,7 +238,7 @@ def evaluate_model(model_name, model, test_loader, criterion, fold, epoch):
     total = 0
     true_labels = []
     pred_labels = []
-    save_path = f"{labels_folder}{model_name}/"
+    save_folder = f"{labels_folder}{model_name}/"
 
     with torch.no_grad():
         for images, labels in test_loader:
@@ -257,10 +260,11 @@ def evaluate_model(model_name, model, test_loader, criterion, fold, epoch):
             true_labels.extend(labels.cpu().numpy())
             pred_labels.extend(predicted.cpu().numpy())
 
+    os.makedirs(save_folder, exist_ok=True)
     # just save the last epoch
     if epoch == 10:
-        np.save(save_path+f"{model_name}_{image_size}_Fold{fold+1}_true_labels.npy", np.array(true_labels))
-        np.save(save_path+f"{model_name}_{image_size}_Fold{fold+1}_pred_labels.npy", np.array(pred_labels))   
+        np.save(save_folder+f"{model_name}_{image_size}_Fold{fold+1}_true_labels.npy", np.array(true_labels))
+        np.save(save_folder+f"{model_name}_{image_size}_Fold{fold+1}_pred_labels.npy", np.array(pred_labels))   
         
         target_labels = target_classes[model_name]
         report = classification_report(true_labels, pred_labels, labels=target_labels)
