@@ -30,11 +30,12 @@ class ViT(torch.nn.Module):
 
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    image_size = 224
+    image_sizes = [64, 128, 224]
     model_name = "ViT"
-
-    model = ViT(image_size).to(device)
-    input_tensor = torch.randn(1, 3, image_size, image_size).to(device)
-    flops, params = profile(model, inputs=(input_tensor,))
-    print(f"FLOPs of {model_name} for {image_size}x{image_size}: {flops}")
-    print(f"Params of {model_name} for {image_size}x{image_size}: {params}")
+    
+    for image_size in image_sizes:
+        model = ViT(image_size).to(device)
+        input_tensor = torch.randn(1, 3, image_size, image_size).to(device)
+        flops, params = profile(model, inputs=(input_tensor,))
+        print(f"FLOPs of {model_name} for {image_size}x{image_size}: {flops}")
+        print(f"Params of {model_name} for {image_size}x{image_size}: {params}")
