@@ -25,6 +25,8 @@
 4. **Train Size : Test Size** = 4 : 1
 ```python
 python five_fold_cross_validation.py # train CNN and ViT
+python get_avg_metrics.py # get precision, recall, F1 and so on
+python get_training_data.py # get accuracy, loss, training time, memory usage
 ```
 
 
