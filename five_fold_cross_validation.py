@@ -168,7 +168,7 @@ def train_model(fold, model_name, model, train_loader, test_loader, criterion, o
         running_loss = 0.0
         correct = 0
         total = 0
-        progress_bar = tqdm(train_loader, desc=f"Epoch {epoch + 1}/{epochs}") # using tqdm() to show progress
+        progress_bar = tqdm(train_loader, desc=f"Epoch {epoch + 1}/{epochs}") # using tqdm() to show process
 
         for images, labels in progress_bar:
             images, labels = images.to(device), labels.to(device)
