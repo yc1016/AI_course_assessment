@@ -9,7 +9,7 @@ def calculate_averages(model_name, image_size, root_path):
     num_folds = 5
 
     for fold in range(num_folds):
-        file_name = root_path + f"{model_name}_{image_size}_Fold{fold}.csv"
+        file_name = root_path + f"{model_name}_{image_size}_Fold{fold+1}.csv"
         if os.path.exists(file_name):
             df = pd.read_csv(file_name)
             epoch_10_data = df.iloc[9]
@@ -33,7 +33,8 @@ for model_name in model_names:
     for image_size in image_sizes:
         root_path = f"training_data/{model_name}/"
         averages = calculate_averages(model_name, image_size, root_path)
-
+        
+        # calculate the whole traning tiem
         averages['Epoch Time'] *= 10
         csv_data.append([
             model_name,
