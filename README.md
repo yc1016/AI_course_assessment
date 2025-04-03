@@ -1,6 +1,5 @@
 # AI_Course_Assessment
 ## Title: Exploring the CNN and ViT in Chinese MNIST
-## Overleaf: https://www.overleaf.com/1529323783cgkwxzdjwkmq#12b48f
 ## Dataset: https://www.kaggle.com/datasets/gpreda/chinese-mnist/data
 ![dataset_sample](Article_Images/dataset_sample.png)
 
