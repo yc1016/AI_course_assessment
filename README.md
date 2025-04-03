@@ -23,6 +23,15 @@
 2. **Learning Rate** = 0.0001
 3. **Batch Size** = 64
 4. **Train Size : Test Size** = 4 : 1
+
+#### Train CNN and ViT
+`python five_fold_cross_validation.py`
+
+#### Get precision, recall, F1 and so on
+`python get_avg_metrics.py`
+
+#### Get accuracy, loss, training time, memory usage
+`python get_training_data.py`
 ```python
 python five_fold_cross_validation.py # train CNN and ViT
 python get_avg_metrics.py # get precision, recall, F1 and so on
@@ -69,8 +78,6 @@ python get_training_data.py # get accuracy, loss, training time, memory usage
 ### Confusion Matrix
 #### CNN
 ![CNN_confusion](results/CNN_confusion_matrix.png)  
-如图所示
 #### ViT
 ![ViT_confusion](results/ViT_confusion_matrix.png)
-如图所示
 
