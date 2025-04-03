@@ -4,7 +4,6 @@ import time
 import torch
 import psutil
 from torchvision import datasets, transforms
-import torch.nn.functional as F
 from torch.utils.data import Dataset, Subset
 from sklearn.metrics import classification_report
 import matplotlib.pyplot as plt

@@ -1,3 +1,8 @@
+'''
+get_avg_metrics.py:
+    Used to calculate the "Average Accuracy", "Average Precision", "Average Recall", "Average F1 Score", "Average Specificity" from 5fold
+    by the data saved in labels_data/CNN & labels_data/ViT
+'''
 import csv
 import numpy as np
 from sklearn.metrics import confusion_matrix

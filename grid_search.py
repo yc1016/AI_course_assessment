@@ -1,14 +1,16 @@
+'''
+grid_search.py:
+    Used to find the best learning rate and batch size for a model in specific image size
+    (64x64, 128x128, 224x224)
+'''
 import torch
 import os
-from torchvision import datasets, transforms
-import torch.nn as nn
-import torch.nn.functional as F
+from torchvision import transforms
 from torch.utils.data import Dataset, random_split
-from transformers import ViTForImageClassification, ViTConfig
 import matplotlib.pyplot as plt
+from models import CNN, ViT
 from tqdm import tqdm
 from PIL import Image
-import csv
 import time
 
 
@@ -19,56 +21,9 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 criterion = torch.nn.CrossEntropyLoss()
 
 
-class CNN(nn.Module):
-    def __init__(self):
-        super(CNN, self).__init__()
-        self.conv_block1 = nn.Sequential(
-            nn.Conv2d(3, 64, kernel_size=5, padding=2),
-            nn.ReLU(),
-            nn.Conv2d(64, 128, kernel_size=5, padding=2),
-            nn.ReLU()
-        )
-        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
-
-        self.conv_block2 = nn.Sequential(
-            nn.Conv2d(128, 256, kernel_size=5, padding=2),
-            nn.ReLU(),
-            nn.Conv2d(256, 512, kernel_size=5, padding=2),
-            nn.ReLU()
-        )
-        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
-
-        self.avg_pool = nn.AdaptiveAvgPool2d((1, 1))
-
-        self.fc1 = nn.Linear(512, 256)
-        self.relu = nn.ReLU()
-        self.fc2 = nn.Linear(256, 15)
-
-    def forward(self, x):
-        x = self.conv_block1(x)
-        x = self.pool1(x)
-        x = self.conv_block2(x)
-        x = self.pool2(x)
-        x = self.avg_pool(x)
-        x = x.view(x.size(0), -1)
-        x = self.fc1(x)
-        x = self.relu(x)
-        x = self.fc2(x)
-        return x
-
-def get_model(model_name):
+def get_model(model_name, image_size):
     if model_name == "ViT":
-        config = ViTConfig(
-            image_size=image_size,
-            patch_size=8,
-            num_channels=3,
-            num_labels=15,
-            hidden_size=256,
-            num_hidden_layers=8,
-            num_attention_heads=8,
-            intermediate_size=512
-        )
-        return ViTForImageClassification(config).to(device)
+        return ViT(image_size).to(device)
     else:
         return CNN().to(device)
 
@@ -83,10 +38,6 @@ class CustomImageDataset(Dataset):
         for file in os.listdir(root_dir):
             if file.endswith(('.png', '.jpg', '.jpeg')):
                 mark = int(file.split('_')[1])
-                # if mark > 40: 
-                #     continue
-                # if (int(file.split('_')[-1].split('.')[0]) >= 12):
-                #     continue
                 label = int(file.split('_')[-1].split('.')[0])
                 self.image_files.append(file)
                 self.labels.append(label - 1)
@@ -142,7 +93,7 @@ def show_images(images, preds_labels, title, max_images=10, images_per_row=5):
     plt.show()
 
 
-def train_model_with_accuracy(model_name, model, train_loader, test_loader, criterion, optimizer, epochs=5):
+def train_model_with_accuracy(model_name, model, train_loader, test_loader, criterion, optimizer, epochs=10):
     train_losses = []
     train_accuracies = []
     test_accuracies = []
@@ -192,15 +143,8 @@ def train_model_with_accuracy(model_name, model, train_loader, test_loader, crit
 
         print(f"Epoch {epoch + 1} - Train Loss: {train_loss:.4f}, Train Acc: {train_accuracy:.2f}%, "
               f"Test Loss: {test_loss:.4f}, Test Acc: {test_accuracy:.2f}%, Time: {epoch_time:.2f}s")
-        # if epoch > 2 and test_accuracy < 40:
-        #     break
-
-    # csv_file = f"{model_name}_{image_size}_training_data.csv"
-    # with open(csv_file, mode='w', newline='') as file:
-    #     writer = csv.writer(file)
-    #     writer.writerow(['Epoch', 'Train Loss', 'Train Accuracy', 'Test Loss', 'Test Accuracy', 'Epoch Time'])
-    #     for i in range(len(train_losses)):
-    #         writer.writerow([i + 1, train_losses[i], train_accuracies[i], test_losses[i], test_accuracies[i], epoch_times[i]])
+        if epoch+1 >= 5 and test_accuracy < 40:
+            break
 
     return test_accuracies[-1]
 
@@ -305,7 +249,6 @@ print(f"Training dataset size: {len(train_dataset)}")
 print(f"Test dataset size: {len(test_dataset)}")
 
 show_distribution(test_dataset, train_dataset)
-# exit()
 
 '''ViT-64x64: lr = 0.0001 bs = 64'''
 '''ViT-128x128: lr = 0.0001 bs = 64'''
@@ -318,6 +261,9 @@ learning_rates = [0.0005, 0.0002, 0.0001]
 batch_sizes = [32, 64, 128]
 
 best_lr, best_bs = grid_search(model_name, learning_rates, batch_sizes, epochs, criterion)
+
+print("-"*50)
+print(f"After grid search: the best_lr and best_bs for {model_name} in {image_size}x{image_size} are: {best_lr}, {best_bs}")
 
 # train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=best_bs, shuffle=True)
 # test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=best_bs, shuffle=False)

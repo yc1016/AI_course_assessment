@@ -1,3 +1,8 @@
+'''
+get_avg_training_data.py:
+    Used to calculate the "Test Accuracy", "Test Loss", "Training Time", "Memory Usage" from 5fold
+    by the data saved in training_data/CNN & training_data/ViT
+'''
 import pandas as pd
 import os
 import csv
