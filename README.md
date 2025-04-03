@@ -17,7 +17,7 @@
 ## How to Use
 ### Requirements:
 * python=3.1.0
-* cuda=
+* cuda=11.8
 ### Super Parameters:
 1. **Epoch** = 10
 2. **Learning Rate** = 0.0001
