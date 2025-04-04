@@ -3,27 +3,15 @@
 ## Dataset: https://www.kaggle.com/datasets/gpreda/chinese-mnist/data
 ![dataset_sample](Article_Images/dataset_sample.png)
 
-## Models
-<!DOCTYPE html>
-<html lang="zh-CN">
-<body>
-  <div style="display: flex; justify-content: space-around;">
-    <img src="Article_Images/CNN.png" alt="CNN" style="width: 300px; height: auto; margin-right: 100px;">
-    <img src="Article_Images/ViT.png" alt="ViT" style="width: 700px; height: auto;">
-  </div>
-</body>
-</html>
-
 ## How to Use
 ### Requirements:
-* python=3.1.0
+* python=3.8
 * cuda=11.8
-### Super Parameters:
-1. **Epoch** = 10
-2. **Learning Rate** = 0.0001
-3. **Batch Size** = 64
-4. **Train Size : Test Size** = 4 : 1
-
+```bash
+conda create -n Assessment python=3.8
+conda activate Assessment
+pip install -r requirements.txt
+```
 #### Train CNN and ViT
 `python five_fold_cross_validation.py`
 
@@ -38,6 +26,21 @@ python get_avg_metrics.py # get precision, recall, F1 and so on
 python get_training_data.py # get accuracy, loss, training time, memory usage
 ```
 
+## Models
+### Super Parameters:
+1. **Epoch** = 10
+2. **Learning Rate** = 0.0001
+3. **Batch Size** = 64
+4. **Train Size : Test Size** = 4 : 1
+<!DOCTYPE html>
+<html lang="zh-CN">
+<body>
+  <div style="display: flex; justify-content: space-around;">
+    <img src="Article_Images/CNN.png" alt="CNN" style="width: 300px; height: auto; margin-right: 100px;">
+    <img src="Article_Images/ViT.png" alt="ViT" style="width: 700px; height: auto;">
+  </div>
+</body>
+</html>
 
 ## Results
 ### Params and FLOPs
