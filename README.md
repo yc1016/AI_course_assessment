@@ -20,6 +20,9 @@ pip install -r requirements.txt
 
 #### Get accuracy, loss, training time, memory usage
 `python get_training_data.py`
+
+#### Get confusion matrix
+`python get_confusion_matrix.py`
 ```python
 python five_fold_cross_validation.py # train CNN and ViT
 python get_avg_metrics.py # get precision, recall, F1 and so on
